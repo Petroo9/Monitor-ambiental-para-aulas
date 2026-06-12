@@ -1,5 +1,6 @@
 import json
 import paho.mqtt.client as mqtt
+from datetime import datetime
 
 BROKER = "localhost"
 PORT = 1883
@@ -93,8 +94,8 @@ def on_message(client, userdata, msg):
         payload = json.loads(msg.payload.decode())
 
         co2 = payload["co2"]
-        temperature = payload["temperature"]
-        timestamp = payload["timestamp"]
+        temperature = payload["temperatura"]
+        timestamp = datetime.strptime(payload["time"], "%Y-%m-%d %H:%M:%S")
 
 
         if last_co2 is None:
@@ -108,12 +109,12 @@ def on_message(client, userdata, msg):
             return
 
         delta_co2 = co2 - last_co2
-        delta_tiempo = timestamp - last_timestamp
+        delta_tiempo = (timestamp - last_timestamp).total_seconds()
 
         people = estimate_people(co2, CO2_EXT, VOLUMEN_HABITACION, CAUDAL_VENTILACION, delta_co2, delta_tiempo, temperature, TIPO_ACTIVIDAD)
 
         result = {
-            "timestamp": timestamp,
+            "timestamp": timestamp.isoformat(),
             "people": people,
             "co2": co2,
             "temperature": temperature
