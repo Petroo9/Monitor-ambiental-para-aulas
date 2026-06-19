@@ -1,43 +1,36 @@
 import network
+import json
 import time
-from machine import Pin, UART
 import dht
+from machine import Pin, ADC
 from umqtt.simple import MQTTClient
 
 # Configuracion WiFi
-WIFI_SSID     = "NombreWifi"
-WIFI_PASSWORD = "Contraseña"
+WIFI_SSID     = "POCO X6 Pro 5G"
+WIFI_PASSWORD = "13579000"
 
 # Configuracion MQTT
-MQTT_BROKER   = "192.168.x.x"   # IP donde corre Mosquitto
+MQTT_BROKER   = "10.226.2.73"   # IP donde corre Mosquitto
 MQTT_PORT     = 1883
 MQTT_CLIENT   = "pico_aula_01"
-TOPIC_CO2     = b"aula/co2"
-TOPIC_TEMP    = b"aula/temperatura"
-TOPIC_HUM     = b"aula/humedad"
+TOPIC_SENSORES = b"upv/etsiinf/aula1/sensors"
 
 # Intervalo de lectura en segundos
-INTERVALO = 30
+INTERVALO = 20
 
 # Sensor DHT22 en su pin 15
 sensor_dht = dht.DHT22(Pin(15))
 
 # Sensor MH-Z19
-uart = UART(1, baudrate=9600, tx=Pin(4), rx=Pin(5))
-
-# Comando de lectura del MH-Z19
-CMD_READ_CO2 = bytes([0xFF, 0x01, 0x86, 0x00, 0x00,
-                      0x00, 0x00, 0x00, 0x79])
+adc_co2 = ADC(Pin(26))
 
 def leer_co2():
-    uart.write(CMD_READ_CO2)
-    time.sleep_ms(100)
-    if uart.any():
-        respuesta = uart.read(9)
-        if respuesta and len(respuesta) == 9 and respuesta[0] == 0xFF:
-            ppm = respuesta[2] * 256 + respuesta[3]
-            return ppm
-    return None
+    valor = adc_co2.read_u16()
+    voltaje = valor * 3.3 / 65535
+    ppm = (voltaje - 0.4) * (2000 - 400) / (2.0 - 0.4) + 400
+    if ppm < 400:
+        ppm = 400
+    return round(ppm)
 
 def conectar_wifi():
     wlan = network.WLAN(network.STA_IF)
@@ -79,14 +72,21 @@ while True:
 
         # Lectura MH-Z19
         co2 = leer_co2()
+        
+        # Lectura hora
+        t = time.localtime()
+        timeString = "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(
+            t[0], t[1], t[2], t[3], t[4], t[5])
 
-        print(f"Temp: {temperatura}°C | Hum: {humedad}% | CO2: {co2} ppm")
+        print(f"Temp: {temperatura}°C | Hum: {humedad}% | CO2: {co2} ppm | Tiempo: {timeString}")
 
-        # Publicar por MQTT (como strings el broker recibira texto)
-        client.publish(TOPIC_TEMP, str(temperatura))
-        client.publish(TOPIC_HUM,  str(humedad))
-        if co2 is not None:
-            client.publish(TOPIC_CO2, str(co2))
+        # Publicar por MQTT
+        playload = json.dumps({
+            "temperatura": temperatura,
+            "humedad": humedad,
+            "co2": co2,
+            "time": timeString})
+        client.publish(TOPIC_SENSORES, playload)
 
     except OSError as e:
         print("Error de sensor:", e)
